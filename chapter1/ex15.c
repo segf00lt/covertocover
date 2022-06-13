@@ -1,0 +1,22 @@
+#include <stdio.h>
+
+float ftoc(float fahr) {
+	return (5.0 / 9.0) * (fahr - 32.0);
+}
+
+int main(void) {
+	float fahr, celsius;
+	int lower, upper, step;
+
+	lower = 0;
+	upper = 300;
+	step = 20;
+
+	printf("fahr\tcelsius\n");
+	for(fahr = lower; fahr <= upper; fahr += step) {
+		celsius = ftoc(fahr);
+		printf("%3.0f\t%6.1f\n", fahr, celsius);
+	}
+
+	return 0;
+}
