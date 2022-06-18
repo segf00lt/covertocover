@@ -5,4 +5,5 @@ let's go cover to cover.
 
 ## TODO
 
-- Finish chapter1 exercises 21-24
+- chapter1 exercises 21-24
+- chapter3 exercise 1
