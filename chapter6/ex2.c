@@ -39,6 +39,14 @@ int main(int argc, char **argv) {
 
 	suffixlen = 6;
 
+	if(argc > 3) {
+		fprintf(stderr, "error: too many arguments\n");
+		exit(1);
+	}
+
+	if(argc == 3 && !strcmp(argv[1], "-n"))
+		suffixlen = atoi(argv[2]);
+
 	getvarname(); // handle first node
 	suffixtree = calloc(1, sizeof(S_node));
 	suffixtree->vartree = calloc(1, sizeof(V_node));
@@ -148,8 +156,23 @@ int gettoken(void) {
 		ungetchar(c);
 
 		return (tokentype = NAME);
+	} else if(c == '/') { // skip past comments
+		c = getchar();
+
+		if(c == '/') {
+			while(getchar() != '\n');
+			return (tokentype = OTHER);
+		} else if(c == '*') {
+			while(1) {
+				while(getchar() != '*');
+				if(getchar() == '/')
+					return (tokentype = OTHER);
+			}
+		}
+
+		ungetchar(c);
 	} else if(c == '[') {
-		while((c = getchar()) != ']');
+		while(getchar() != ']');
 		return (tokentype = ARR);
 	} else if(c == '*') {
 		return (tokentype = STAR);
@@ -201,8 +224,13 @@ int getvarname(void) {
 			while(gettoken() != LBRACE); // skip to end of struct decl
 			n ^= n; // reset name count
 		} else if(tokentype == OTHER) {
-			if(n > 0)
-				n ^= n; // reset name count
+			n ^= n; // reset name count
+		} else if(tokentype == STAR) {
+			continue;
+		} else if(tokentype == ARR) {
+			continue;
+		} else if(tokentype == EQ) {
+			continue;
 		} else if(tokentype == SEMI) {
 			if(n >= 2)
 				return 1;
