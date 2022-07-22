@@ -19,6 +19,9 @@ char inbuf[MAXLINE];
 char outbuf[MAXLINE];
 char namebuf[MAXNAME];
 
+int state = 0;
+enum { IF = 1, DONE };
+
 int mygetline(char *buf, int max) {
 	int c, n = 0;
 
@@ -98,16 +101,68 @@ int undef(char *s) {
 	return 1;
 }
 
-int main(void) {
+void tablefree(struct nlist *hashtab[HASHSIZE]) {
 	struct nlist *np, *nextp;
-	char *pin, *pout, *id, *val;
 
-	while(mygetline(inbuf, MAXLINE) > 0) {
+	for(int i = 0; i < HASHSIZE; ++i) {
+		if(!(np = hashtab[i]))
+			continue;
+
+		nextp = np->next;
+		while(np) {
+			free(np->name);
+			free(np->defn);
+			free(np);
+			np = nextp;
+			if(np)
+				nextp = np->next;
+		}
+	}
+}
+
+int main(void) {
+	struct nlist *np;
+	char *pin, *pout, *id, *val;
+	int len, count = 0;
+
+	while((len = mygetline(inbuf, MAXLINE)) > 0) {
+		++count;
 		pin = inbuf;
 		pout = outbuf;
 
 		while(*pin) {
-			if(strstr(pin, "#define") == pin) { // define statement
+			if(*pin == '"') {
+
+				for(*pout++ = *pin++; *pin && *pin != '"'; *pout++ = *pin++);
+
+				continue;
+
+			} else if(strstr(pin, "/*") == pin) {
+
+				while(len > 0 && !strstr(pin, "*/")) {
+					len = mygetline(inbuf, MAXLINE);
+					pin = inbuf;
+				}
+
+				if(len <= 0) {
+					fprintf(stderr, "error: open comment at line %i\n", count);
+					fputs(inbuf, stderr);
+					fputs("^^^^^^\n", stderr);
+					tablefree(hashtab);
+					exit(1);
+				}
+
+				while(strstr(pin, "*/") != pin)
+					++pin;
+				pin += 2;
+
+				continue;
+
+			} else if(strstr(pin, "//") == pin) {
+
+				break;
+
+			} else if(strstr(pin, "#define") == pin) {
 
 				pin += STRLEN("#define");
 
@@ -131,7 +186,8 @@ int main(void) {
 
 					break;
 				}
-			} else if(strstr(pin, "#undef") == pin) { // undefine statement
+
+			} else if(strstr(pin, "#undef") == pin) {
 
 				pin += STRLEN("#undef");
 
@@ -149,6 +205,210 @@ int main(void) {
 					break;
 				}
 
+			} else if(strstr(pin, "#ifdef") == pin) {
+
+				if(state) {
+					fprintf(stderr, "error: nested #ifdef at line %i\n", count);
+					fputs(inbuf, stderr);
+					fputs("^^^^^^\n", stderr);
+					tablefree(hashtab);
+					exit(1);
+				}
+
+				state = IF;
+
+				pin += STRLEN("#ifdef");
+
+				while(isspace(*pin))
+					++pin;
+
+				if(isalpha(*pin) || *pin == '_') {
+					id = pin;
+					while(isalnum(*pin) || *pin == '_')
+						++pin;
+					*pin++ = 0;
+
+					if(lookup(id)) {
+						state = DONE;
+						break;
+					}
+
+					while(len > 0
+						&& (strstr(inbuf, "#elif") != inbuf)
+						&& (strstr(inbuf, "#else\n") != inbuf)
+						&& (strstr(inbuf, "#endif\n") != inbuf))
+						len = mygetline(inbuf, MAXLINE);
+
+					if(len <= 0) {
+						fprintf(stderr, "error: open #ifdef\n");
+						tablefree(hashtab);
+						exit(1);
+					}
+
+					pin = inbuf;
+					pout = outbuf;
+
+					continue;
+				} else {
+					fprintf(stderr, "error: bad #ifdef at line %i\n", count);
+					fputs(inbuf, stderr);
+					fputs("^^^^^^\n", stderr);
+					tablefree(hashtab);
+					exit(1);
+				}
+
+			} else if(strstr(pin, "#ifndef") == pin) {
+
+				if(state) {
+					fprintf(stderr, "error: nested #ifndef at line %i\n", count);
+					fputs(inbuf, stderr);
+					fputs("^^^^^^\n", stderr);
+					tablefree(hashtab);
+					exit(1);
+				}
+
+				state = IF;
+
+				pin += STRLEN("#ifndef");
+
+				while(isspace(*pin))
+					++pin;
+
+				if(isalpha(*pin) || *pin == '_') {
+					id = pin;
+					while(isalnum(*pin) || *pin == '_')
+						++pin;
+					*pin++ = 0;
+
+					if(!lookup(id)) {
+						state = DONE;
+						break;
+					}
+
+					while(len > 0
+						&& (strstr(inbuf, "#elif") != inbuf)
+						&& (strstr(inbuf, "#else\n") != inbuf)
+						&& (strstr(inbuf, "#endif\n") != inbuf))
+						len = mygetline(inbuf, MAXLINE);
+
+					if(len <= 0) {
+						fprintf(stderr, "error: open #ifndef\n");
+						tablefree(hashtab);
+						exit(1);
+					}
+
+					pin = inbuf;
+					pout = outbuf;
+
+					continue;
+				} else {
+					fprintf(stderr, "error: bad #ifndef at line %i\n", count);
+					fputs(inbuf, stderr);
+					fputs("^^^^^^\n", stderr);
+					tablefree(hashtab);
+					exit(1);
+				}
+
+			} else if(strstr(pin, "#elif") == pin) {
+
+				if(state == DONE) {
+					while(len > 0 && strstr(inbuf, "#endif\n") != inbuf)
+						len = mygetline(inbuf, MAXLINE);
+
+					if(len <= 0) {
+						fprintf(stderr, "error: open #elif\n");
+						tablefree(hashtab);
+						exit(1);
+					}
+
+					pin = inbuf;
+					continue;
+				} else if(state == 0) {
+					fprintf(stderr, "error: lone #elif at line %i\n", count);
+					fputs(inbuf, stderr);
+					fputs("^^^^^^\n", stderr);
+					tablefree(hashtab);
+					exit(1);
+				}
+
+				pin += STRLEN("#elif");
+
+				while(isspace(*pin))
+					++pin;
+
+				if(isalpha(*pin) || *pin == '_') {
+					id = pin;
+					while(isalnum(*pin) || *pin == '_')
+						++pin;
+					*pin++ = 0;
+
+					if(lookup(id)) {
+						state = DONE;
+						break;
+					}
+
+					while(len > 0
+						&& (strstr(inbuf, "#elif") != inbuf)
+						&& (strstr(inbuf, "#else\n") != inbuf)
+						&& (strstr(inbuf, "#endif\n") != inbuf))
+						len = mygetline(inbuf, MAXLINE);
+
+					if(len <= 0) {
+						fprintf(stderr, "error: open #elif\n");
+						tablefree(hashtab);
+						exit(1);
+					}
+
+					pin = inbuf;
+					pout = outbuf;
+
+					continue;
+				} else {
+					fprintf(stderr, "error: bad #elif at line %i\n", count);
+					fputs(inbuf, stderr);
+					fputs("^^^^^^\n", stderr);
+					tablefree(hashtab);
+					exit(1);
+				}
+
+			} else if(strstr(pin, "#else\n") == pin) {
+
+				if(state == DONE) {
+					while(len > 0 && strstr(inbuf, "#endif\n") != inbuf)
+						len = mygetline(inbuf, MAXLINE);
+
+					if(len <= 0) {
+						fprintf(stderr, "error: open #else\n");
+						tablefree(hashtab);
+						exit(1);
+					}
+
+					pin = inbuf;
+					continue;
+				} else if(state == 0) {
+					fprintf(stderr, "error: lone #else at line %i\n", count);
+					fputs(inbuf, stderr);
+					fputs("^^^^^^\n", stderr);
+					tablefree(hashtab);
+					exit(1);
+				}
+
+				state = DONE;
+				break;
+
+			} else if(strstr(pin, "#endif") == pin) {
+
+				if(!state) {
+					fprintf(stderr, "error: lone #endif at line %i\n", count);
+					fputs(inbuf, stderr);
+					fputs("^^^^^^\n", stderr);
+					tablefree(hashtab);
+					exit(1);
+				}
+
+				state ^= state;
+				break;
+
 			} else if(isalpha(*pin)) { // read a name
 
 				id = namebuf;
@@ -162,7 +422,7 @@ int main(void) {
 				else
 					for(val = namebuf; *val; *pout++ = *val++);
 
-			} else {
+			} else { // do nothing
 				*pout++ = *pin++;
 			}
 		}
@@ -173,20 +433,7 @@ int main(void) {
 		}
 	}
 
-	for(int i = 0; i < (sizeof(hashtab) / sizeof(*hashtab)); ++i) {
-		if(!(np = hashtab[i]))
-			continue;
-
-		nextp = np->next;
-		while(np) {
-			free(np->name);
-			free(np->defn);
-			free(np);
-			np = nextp;
-			if(np)
-				nextp = np->next;
-		}
-	}
+	tablefree(hashtab);
 
 	return 0;
 }
