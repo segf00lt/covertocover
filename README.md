@@ -9,4 +9,3 @@ let's go cover to cover.
 - chapter3 exercise 1
 - chapter4 exercise 7
 - chapter5 exercise 11,12,17
-- chapter7 exercise 5 and 7
