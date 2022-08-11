@@ -3,20 +3,6 @@
 #include <error.h>
 #define MAXLINE 1000
 
-int mygetline(char *buf, int max) {
-	int c, n = 0;
-
-	while((c = getchar()) != EOF && c != '\n' && n < (max - 1))
-		buf[n++] = c;
-
-	if(c == '\n')
-		buf[n++] = c;
-
-	buf[n] = 0;
-
-	return n;
-}
-
 int main(int argc, char **argv) {
 	FILE *fp;
 	char *pattern;
